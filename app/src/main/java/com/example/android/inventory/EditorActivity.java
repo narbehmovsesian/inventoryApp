@@ -1,5 +1,6 @@
 package com.example.android.inventory;
 
+import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.LoaderManager;
 import android.content.ContentValues;
@@ -15,15 +16,23 @@ import android.os.Bundle;
 import android.support.v4.app.NavUtils;
 import android.support.v7.app.AppCompatActivity;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.ImageView;
+import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URI;
+
 import static com.example.android.inventory.data.ProductContract.*;
+import static com.example.android.inventory.data.ProductProvider.LOG_TAG;
 
 /**
  * Created by narbeh on 10/23/17.
@@ -37,7 +46,9 @@ public class EditorActivity extends AppCompatActivity implements LoaderManager.L
     private EditText mNameEditText;
     private EditText mQuantityEditText;
     private EditText mPriceEditText;
-    private ImageView mImageEdit;
+    private ImageView mImageView;
+    private TextView mTextView;
+    private Uri mUri;
     private boolean mProductChanged = false;
     private static final int SELECT_PICTURE = 0;
 
@@ -72,9 +83,9 @@ public class EditorActivity extends AppCompatActivity implements LoaderManager.L
         mNameEditText = (EditText) findViewById(R.id.edit_product_name);
         mQuantityEditText = (EditText) findViewById(R.id.edit_product_quantity);
         mPriceEditText = (EditText) findViewById(R.id.edit_product_price);
-        mImageEdit = (ImageView) findViewById(R.id.edit_product_image);
+        mImageView = (ImageView) findViewById(R.id.edit_product_image);
 
-        mImageEdit.setOnClickListener(new View.OnClickListener() {
+        mImageView.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 Intent intent = new Intent();
                 intent.setType("image/*");
@@ -87,7 +98,77 @@ public class EditorActivity extends AppCompatActivity implements LoaderManager.L
         mNameEditText.setOnTouchListener(mTouchListener);
         mQuantityEditText.setOnTouchListener(mTouchListener);
         mPriceEditText.setOnTouchListener(mTouchListener);
-        mImageEdit.setOnTouchListener(mTouchListener);
+        mImageView.setOnTouchListener(mTouchListener);
+    }
+
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent resultData) {
+        // The ACTION_OPEN_DOCUMENT intent was sent with the request code READ_REQUEST_CODE.
+        // If the request code seen here doesn't match, it's the response to some other intent,
+        // and the below code shouldn't run at all.
+
+        if (requestCode == SELECT_PICTURE && resultCode == Activity.RESULT_OK) {
+            // The document selected by the user won't be returned in the intent.
+            // Instead, a URI to that document will be contained in the return intent
+            // provided to this method as a parameter.  Pull that uri using "resultData.getData()"
+
+            if (resultData != null) {
+                mUri = resultData.getData();
+                Log.i(LOG_TAG, "Uri: " + mUri.toString());
+                mImageView.setImageBitmap(getBitmapFromUri(mUri));
+            }
+        }
+    }
+
+    public Bitmap getBitmapFromUri(Uri uri) {
+
+        if (uri == null || uri.toString().isEmpty())
+            return null;
+
+        // Get the dimensions of the View
+        int targetW = mImageView.getWidth();
+        int targetH = mImageView.getHeight();
+
+        InputStream input = null;
+        try {
+            input = this.getContentResolver().openInputStream(uri);
+
+            // Get the dimensions of the bitmap
+            BitmapFactory.Options bmOptions = new BitmapFactory.Options();
+            bmOptions.inJustDecodeBounds = true;
+            BitmapFactory.decodeStream(input, null, bmOptions);
+            input.close();
+
+            int photoW = bmOptions.outWidth;
+            int photoH = bmOptions.outHeight;
+
+            // Determine how much to scale down the image
+            int scaleFactor = Math.min(photoW / targetW, photoH / targetH);
+
+            // Decode the image file into a Bitmap sized to fill the View
+            bmOptions.inJustDecodeBounds = false;
+            bmOptions.inSampleSize = scaleFactor;
+            bmOptions.inPurgeable = true;
+
+            input = this.getContentResolver().openInputStream(uri);
+            Bitmap bitmap = BitmapFactory.decodeStream(input, null, bmOptions);
+            input.close();
+            return bitmap;
+
+        } catch (FileNotFoundException fne) {
+            Log.e(LOG_TAG, "Failed to load image.", fne);
+            return null;
+        } catch (Exception e) {
+            Log.e(LOG_TAG, "Failed to load image.", e);
+            return null;
+        } finally {
+            try {
+                input.close();
+            } catch (IOException ioe) {
+
+            }
+        }
     }
 
     @Override
@@ -112,20 +193,13 @@ public class EditorActivity extends AppCompatActivity implements LoaderManager.L
         switch (item.getItemId()) {
             // Respond to a click on the "Save" menu option
             case R.id.action_save:
-                // Save pet to database
                 saveProduct();
-                // Exit activity
                 finish();
                 return true;
-            // Respond to a click on the "Delete" menu option
             case R.id.action_delete:
-                // Pop up confirmation dialog for deletion
                 showDeleteConfirmationDialog();
                 return true;
-            // Respond to a click on the "Up" arrow button in the app bar
             case android.R.id.home:
-                // If the pet hasn't changed, continue with navigating up to parent activity
-                // which is the {@link CatalogActivity}.
                 if (!mProductChanged) {
                     NavUtils.navigateUpFromSameTask(EditorActivity.this);
                     return true;
@@ -186,14 +260,19 @@ public class EditorActivity extends AppCompatActivity implements LoaderManager.L
             String name = cursor.getString(nameColumnIndex);
             int quantity = cursor.getInt(quantityColumnIndex);
             int price = cursor.getInt(priceColumnIndex);
-            byte[] image = cursor.getBlob(imageColumnIndex);
+
+            String image = cursor.getString(imageColumnIndex);
+
 
 
             if (image != null) {
-                Bitmap bmp = BitmapFactory.decodeByteArray(image, 0, image.length);
-                mImageEdit.setImageBitmap(bmp);
+                Uri imageUri =  Uri.parse(image);
+                Log.e("image uri" , imageUri.toString());
+
+                mImageView.setImageURI(imageUri);
+//                mImageView.setImageBitmap(getBitmapFromUri(imageUri));
             } else {
-                mImageEdit.setImageResource(R.drawable.product_placeholder);
+                mImageView.setImageResource(R.drawable.product_placeholder);
             }
 
             mNameEditText.setText(name);
@@ -207,7 +286,7 @@ public class EditorActivity extends AppCompatActivity implements LoaderManager.L
         mNameEditText.setText("");
         mQuantityEditText.setText("");
         mPriceEditText.setText("");
-        mImageEdit.setImageResource(R.drawable.product_placeholder);
+        mImageView.setImageResource(R.drawable.product_placeholder);
     }
 
     private void showDeleteConfirmationDialog() {
@@ -255,8 +334,6 @@ public class EditorActivity extends AppCompatActivity implements LoaderManager.L
         int quantity = Integer.parseInt(quantityString);
         int price = Integer.parseInt(priceString);
 
-
-
         if (mCurrentProductUri == null && TextUtils.isEmpty(nameString) && TextUtils.isEmpty(quantityString) && TextUtils.isEmpty(priceString)) {
             return;
         }
@@ -265,6 +342,7 @@ public class EditorActivity extends AppCompatActivity implements LoaderManager.L
         values.put(ProductEntry.COLUMN_PRODUCT_NAME, nameString);
         values.put(ProductEntry.COLUMN_QUANTITY, quantity);
         values.put(ProductEntry.COLUMN_PRICE, price);
+        values.put(ProductEntry.COLUMN_IMAGE, mUri.toString().trim());
 
         if (mCurrentProductUri == null) {
             Uri newUri = getContentResolver().insert(ProductEntry.CONTENT_URI, values);
@@ -296,6 +374,4 @@ public class EditorActivity extends AppCompatActivity implements LoaderManager.L
         }
         finish();
     }
-
-
 }

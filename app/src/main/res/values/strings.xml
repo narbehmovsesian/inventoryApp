@@ -22,7 +22,7 @@
     <string name="editor_delete_product_failed">Error with deleting product</string>
     <string name="editor_insert_Product_successful">Product saved</string>
     <string name="editor_insert_Product_failed">Error with saving Product</string>
-    <string name="editor_update_Product_successful">Pet updated</string>
+    <string name="editor_update_Product_successful">Product updated</string>
     <string name="editor_update_Product_failed">Error with updating Product</string>
 
 </resources>
